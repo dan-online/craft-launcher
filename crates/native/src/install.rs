@@ -2547,6 +2547,16 @@ mod tests {
         linux::unintegrate_from(&data, app, &root.path().join("old.AppImage"), None);
         assert!(desktop.exists(), "removing another copy must keep the current entry");
         std::fs::remove_file(&image).unwrap();
+        let generated = std::fs::read_to_string(&desktop).unwrap();
+        let exec = generated.lines().find(|l| l.starts_with("Exec=")).unwrap();
+        let image_exec = crate::desktop_entry::exec_quote(&image).unwrap();
+        for other in [format!("Exec=\"{}\" %F", runner.display()), format!("Exec=\"{}\" {image_exec} %F", runner.display())] {
+            let elsewhere = generated.replace(exec, &other);
+            std::fs::write(&desktop, &elsewhere).unwrap();
+            linux::unintegrate_from(&data, app, &image, None);
+            assert_eq!(std::fs::read_to_string(&desktop).unwrap(), elsewhere, "an entry pointed at another program is the user's");
+        }
+        std::fs::write(&desktop, &generated).unwrap();
         linux::unintegrate_from(&data, app, &image, Some(&rec));
         assert!(!desktop.exists());
         assert!(!data.join("icons/hicolor/128x128/apps/ai.storyteller.wordcraft.png").exists());

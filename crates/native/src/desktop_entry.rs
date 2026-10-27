@@ -105,14 +105,20 @@ pub fn is_ours(text: &str) -> bool {
 
 /// Whether an entry targets `appimage`, directly or through the launcher's runner.
 pub fn runs_appimage(text: &str, appimage: &Path) -> bool {
-    if exec_program(text).is_some_and(|p| Path::new(&p) == appimage) {
-        return true;
-    }
-    let Some(path) = appimage.to_str().filter(|_| is_ours(text)) else {
+    exec_program(text).is_some_and(|p| Path::new(&p) == appimage) || (is_ours(text) && text.lines().any(|line| runs_through_runner(line, appimage)))
+}
+
+/// Whether `line` is the launcher's `Exec=env <APP>_NO_DESKTOP_INTEGRATION=1 "<runner>" "<appimage>"`
+/// with any runner and any arguments after: a runner still running `appimage`, not a program the
+/// user swapped in.
+fn runs_through_runner(line: &str, appimage: &Path) -> bool {
+    let Some((var, rest)) = line.strip_prefix("Exec=env ").and_then(|rest| rest.split_once(' ')) else {
         return false;
     };
-    let target = format!("TryExec={}", value(path));
-    text.lines().any(|line| line == target)
+    let runner = exec_program(&format!("Exec={rest}")).and_then(|r| exec_quote(Path::new(&r)));
+    let target = runner.zip(exec_quote(appimage)).map(|(runner, image)| format!("{runner} {image}"));
+    var.ends_with("_NO_DESKTOP_INTEGRATION=1")
+        && target.is_some_and(|t| rest.strip_prefix(t.as_str()).is_some_and(|after| after.is_empty() || after.starts_with(' ')))
 }
 
 /// Whether `text` is exactly what [`render`] writes for `app` and `appimage`, with or without the
@@ -215,6 +221,16 @@ mod tests {
         assert!(runs_appimage(&text, image));
         assert!(!runs_appimage(&text, Path::new("/different.AppImage")));
         assert!(!runs_appimage(&text.replace(MARKER, ""), image));
+        let exec = text.lines().find(|l| l.starts_with("Exec=")).unwrap();
+        assert!(runs_appimage(&text.replace(exec, &exec.replacen(" %F", " --safe-mode %F", 1)), image));
+        let quoted = exec_quote(image).unwrap();
+        for elsewhere in [
+            "Exec=/usr/bin/gridcraft %F".to_string(),
+            format!("Exec=/usr/bin/editor {quoted} %F"),
+            exec.replacen("appimage-run\" ", "appimage-run\" --safe-mode ", 1),
+        ] {
+            assert!(!runs_appimage(&text.replace(exec, &elsewhere), image), "{elsewhere}");
+        }
         let direct = render(app("gridcraft"), image, false, None).unwrap();
         assert!(runs_appimage(&direct, image));
         assert_eq!(render(app("gridcraft"), image, false, Some(Path::new(""))), Some(direct));
