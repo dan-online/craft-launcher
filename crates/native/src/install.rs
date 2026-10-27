@@ -2550,7 +2550,8 @@ mod tests {
         let generated = std::fs::read_to_string(&desktop).unwrap();
         let exec = generated.lines().find(|l| l.starts_with("Exec=")).unwrap();
         let image_exec = crate::desktop_entry::exec_quote(&image).unwrap();
-        for other in [format!("Exec=\"{}\" %F", runner.display()), format!("Exec=\"{}\" {image_exec} %F", runner.display())] {
+        let swapped = exec.replacen(&crate::desktop_entry::exec_quote(&runner).unwrap(), "\"/usr/bin/editor\"", 1);
+        for other in [format!("Exec=\"{}\" %F", runner.display()), format!("Exec=\"{}\" {image_exec} %F", runner.display()), swapped] {
             let elsewhere = generated.replace(exec, &other);
             std::fs::write(&desktop, &elsewhere).unwrap();
             linux::unintegrate_from(&data, app, &image, None);
