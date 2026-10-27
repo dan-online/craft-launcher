@@ -290,6 +290,13 @@ fn detect_discord_scheme_handler() -> bool {
     false
 }
 
+/// Whether `program`, as an `Exec=` line names it, can run: a path that exists, or a bare name
+/// found on `PATH`.
+#[cfg(target_os = "linux")]
+pub(crate) fn runnable(program: &str) -> bool {
+    if program.contains('/') { Path::new(program).exists() } else { which_on_path(program).is_some() }
+}
+
 fn which_on_path(name: &str) -> Option<std::path::PathBuf> {
     let path = std::env::var_os("PATH")?;
     std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())

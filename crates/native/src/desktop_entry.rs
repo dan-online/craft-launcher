@@ -133,11 +133,18 @@ fn runs_through_runner(text: &str, appimage: &Path) -> bool {
         && target.is_some_and(|t| rest.strip_prefix(t.as_str()).is_some_and(|after| after.is_empty() || after.starts_with(' ')))
 }
 
+/// The runner an entry's `Exec=env <APP>_NO_DESKTOP_INTEGRATION=1 "<runner>" …` names, as [`render`]
+/// writes it; `None` for any other `Exec=`.
+pub fn runner_of(text: &str) -> Option<String> {
+    let exec = text.lines().find_map(|l| l.strip_prefix("Exec="))?;
+    let (var, rest) = exec.strip_prefix("env ")?.split_once(' ')?;
+    var.ends_with("_NO_DESKTOP_INTEGRATION=1").then(|| exec_program(&format!("Exec={rest}"))).flatten()
+}
+
 /// Whether `text` is exactly what [`render`] writes for `app` and `appimage`, with or without the
 /// icon and run directly or through any runner: an entry the user hasn't edited.
 pub fn is_generated(text: &str, app: &CraftApp, appimage: &Path) -> bool {
-    let env = format!("Exec=env {}_NO_DESKTOP_INTEGRATION=1 ", app.id.to_ascii_uppercase());
-    let runner = text.lines().find_map(|l| l.strip_prefix(env.as_str())).and_then(|rest| exec_program(&format!("Exec={rest}")));
+    let runner = runner_of(text);
     [false, true].into_iter().any(|icon| {
         render(app, appimage, icon, None).as_deref() == Some(text)
             || runner.as_deref().is_some_and(|r| render(app, appimage, icon, Some(Path::new(r))).as_deref() == Some(text))
