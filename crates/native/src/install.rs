@@ -1216,6 +1216,8 @@ pub(crate) mod linux {
         }
     }
 
+    /// [`refresh_menu_entries`] for one app in the data folder `data`: rewrites its menu entry for
+    /// `runner` only when it is a plain file the launcher wrote and nobody edited since.
     pub(crate) fn refresh_owned_menu_entry(data: &Path, app: &CraftApp, appimage: &Path, runner: &Path) {
         let desktop = desktop_path(data, app);
         if !appimage.is_file() || !std::fs::symlink_metadata(&desktop).is_ok_and(|m| m.is_file()) {

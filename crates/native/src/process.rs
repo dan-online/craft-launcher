@@ -295,6 +295,8 @@ fn which_on_path(name: &str) -> Option<std::path::PathBuf> {
     std::env::split_paths(&path).map(|d| d.join(name)).find(|p| p.is_file())
 }
 
+/// The program AppImages run through, from `ARTCRAFT_LAUNCHER_APPIMAGE_RUNNER` (the Nix package
+/// sets it to `appimage-run`); `None` runs them directly.
 pub(crate) fn appimage_runner() -> Option<std::ffi::OsString> {
     std::env::var_os("ARTCRAFT_LAUNCHER_APPIMAGE_RUNNER").filter(|runner| !runner.is_empty())
 }
@@ -305,6 +307,8 @@ pub fn launch_binary(app_id: &str, exe: &Path, args: &[&str]) -> Result<(), Stri
     spawn_detached(binary_command(app_id, exe, args, in_sandbox(), runner.as_deref()))
 }
 
+/// The command [`launch_binary`] spawns: `flatpak-spawn --host` inside the sandbox, the AppImage
+/// runner for an AppImage on Linux, otherwise `exe` itself.
 fn binary_command(app_id: &str, exe: &Path, args: &[&str], sandbox: bool, appimage_runner: Option<&std::ffi::OsStr>) -> Command {
     let mut cmd = if sandbox {
         let mut c = command("flatpak-spawn");
