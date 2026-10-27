@@ -115,6 +115,17 @@ pub fn runs_appimage(text: &str, appimage: &Path) -> bool {
     text.lines().any(|line| line == target)
 }
 
+/// Whether `text` is exactly what [`render`] writes for `app` and `appimage`, with or without the
+/// icon and run directly or through any runner: an entry the user hasn't edited.
+pub fn is_generated(text: &str, app: &CraftApp, appimage: &Path) -> bool {
+    let env = format!("Exec=env {}_NO_DESKTOP_INTEGRATION=1 ", app.id.to_ascii_uppercase());
+    let runner = text.lines().find_map(|l| l.strip_prefix(env.as_str())).and_then(|rest| exec_program(&format!("Exec={rest}")));
+    [false, true].into_iter().any(|icon| {
+        render(app, appimage, icon, None).as_deref() == Some(text)
+            || runner.as_deref().is_some_and(|r| render(app, appimage, icon, Some(Path::new(r))).as_deref() == Some(text))
+    })
+}
+
 /// The program an entry's `Exec=` runs: its first argument, unquoted. Reads the launcher's own
 /// quoting and the plain `Exec="<path>" %F` the apps' AppImages write for themselves.
 pub fn exec_program(text: &str) -> Option<String> {
@@ -208,6 +219,33 @@ mod tests {
         assert!(runs_appimage(&direct, image));
         assert_eq!(render(app("gridcraft"), image, false, Some(Path::new(""))), Some(direct));
         assert!(render(app("gridcraft"), image, false, Some(Path::new("/runner\nunsafe"))).is_none());
+    }
+
+    #[test]
+    fn recognizes_unedited_entries_with_any_runner() {
+        let wordcraft = app("wordcraft");
+        let image = Path::new(r#"/home/ana/My Apps/quote\" $x/100%.AppImage"#);
+        let old_runner = Path::new("/nix/store/aaaa-My Runner 100%/bin/appimage-run");
+        for icon in [false, true] {
+            assert!(is_generated(&render(wordcraft, image, icon, None).unwrap(), wordcraft, image));
+            assert!(is_generated(&render(wordcraft, image, icon, Some(old_runner)).unwrap(), wordcraft, image));
+        }
+        let generated = render(wordcraft, image, false, Some(old_runner)).unwrap();
+        let exec = generated.lines().find(|l| l.starts_with("Exec=")).unwrap();
+        let edited = [
+            generated.replace("Name=WordCraft\n", "Name=My Writer\n"),
+            generated.replace(exec, &format!("{exec} --safe-mode")),
+            generated.replace(exec, &exec.replacen("appimage-run\" ", "appimage-run\" --safe-mode ", 1)),
+            generated.replace(exec, "Exec=/usr/local/bin/my-wrapper %F"),
+            format!("{generated}Name[fr]=Mon traitement de texte\n"),
+            format!("{generated}Actions=New;\n\n[Desktop Action New]\nName=New document\nExec=wordcraft --new\n"),
+            generated.replace(MARKER, ""),
+        ];
+        for text in edited {
+            assert!(!is_generated(&text, wordcraft, image), "{text}");
+        }
+        assert!(!is_generated(&generated, app("photocraft"), image));
+        assert!(!is_generated(&generated, wordcraft, Path::new("/other.AppImage")));
     }
 
     #[test]

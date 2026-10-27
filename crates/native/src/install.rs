@@ -1199,7 +1199,7 @@ pub(crate) mod linux {
         written
     }
 
-    /// Refreshes existing launcher-owned entries when its AppImage runtime changes.
+    /// Points the launcher's unedited menu entries at its current AppImage runtime.
     pub fn refresh_menu_entries(manifest: &crate::manifest::Manifest) {
         if process::in_sandbox() {
             return;
@@ -1222,7 +1222,8 @@ pub(crate) mod linux {
             return;
         }
         let Ok(old) = std::fs::read_to_string(&desktop) else { return };
-        if !crate::desktop_entry::is_ours(&old) || !crate::desktop_entry::runs_appimage(&old, appimage) {
+        // This runs on every start, so a user's edits (names, arguments, actions) must survive it.
+        if !crate::desktop_entry::is_generated(&old, app, appimage) {
             return;
         }
         let Some(text) = crate::desktop_entry::render(app, appimage, icon_path(data, app).is_file(), Some(runner)) else {
@@ -2571,6 +2572,16 @@ mod tests {
         assert_eq!(std::fs::read(&icon).unwrap(), b"user's icon");
         let inode = std::fs::metadata(&desktop).unwrap().ino();
         linux::refresh_owned_menu_entry(&data, app, &image, &runner);
+        assert_eq!(std::fs::metadata(&desktop).unwrap().ino(), inode);
+        // A new runtime (a new Nix store path) replaces the one an unedited entry names.
+        let newer = root.path().join("newer/appimage-run");
+        linux::refresh_owned_menu_entry(&data, app, &image, &newer);
+        assert_eq!(std::fs::read_to_string(&desktop).unwrap(), crate::desktop_entry::render(app, &image, true, Some(&newer)).unwrap());
+        let edited = text.replace("Name=WordCraft\n", "Name=My Writer\n");
+        std::fs::write(&desktop, &edited).unwrap();
+        let inode = std::fs::metadata(&desktop).unwrap().ino();
+        linux::refresh_owned_menu_entry(&data, app, &image, &newer);
+        assert_eq!(std::fs::read_to_string(&desktop).unwrap(), edited);
         assert_eq!(std::fs::metadata(&desktop).unwrap().ino(), inode);
 
         let other = crate::desktop_entry::render(app, &root.path().join("different.AppImage"), true, None).unwrap();
